@@ -10,7 +10,12 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
 # المواد والفئات
-SUBJECTS = ["مخبر الدارات المتكاملة", "مخبر نظم الحاسوب (معالجات متطورة)", "مخبر نظم المعلومات (تحليل وتصميم)", "مخبر نظم المعلومات (مترجمات)"]
+SUBJECTS = [
+    "مخبر الدارات المتكاملة",
+    "مخبر نظم الحاسوب (معالجات متطورة)",
+    "مخبر نظم المعلومات (تحليل وتصميم)",
+    "مخبر نظم المعلومات (مترجمات)"
+]
 GROUPS = ["1", "2", "3", "4", "5", "6"]
 
 DATA_FILE = "requests.json"
@@ -22,21 +27,21 @@ def load_data():
     try:
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
-    except:
+    except (FileNotFoundError, json.JSONDecodeError):
         return []
 
 def save_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-
 def find_match(new_request):
     data = load_data()
     for req in data:
         if (
-            req["subject"] == new_request["subject"]
-            and req["current_group"] == new_request["target_group"]
-            and req["target_group"] == new_request["current_group"]
+            req["user_id"] != new_request["user_id"] and
+            req["subject"] == new_request["subject"] and
+            req["current_group"] == new_request["target_group"] and
+            req["target_group"] == new_request["current_group"]
         ):
             return req
     return None
@@ -62,38 +67,52 @@ async def start_cmd(msg: types.Message):
 
 @dp.callback_query(lambda c: c.data == "add_request")
 async def add_request(callback: types.CallbackQuery):
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=s, callback_data=f"subject_{s}") for s in SUBJECTS]
-    ])
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=s, callback_data=f"subject_{i}")]
+            for i, s in enumerate(SUBJECTS)
+        ]
+    )
     await callback.message.answer("اختر المادة:", reply_markup=keyboard)
 
 
 @dp.callback_query(lambda c: c.data.startswith("subject_"))
 async def choose_subject(callback: types.CallbackQuery):
-    subject = callback.data.split("_")[1]
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=g, callback_data=f"cur_{subject}_{g}") for g in GROUPS]
-    ])
+    subject_index = int(callback.data.split("_")[1])
+    subject = SUBJECTS[subject_index]
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=g, callback_data=f"cur_{subject_index}_{g}") for g in GROUPS]
+        ]
+    )
     await callback.message.answer(f"اختر فئتك الحالية لمادة {subject}:", reply_markup=keyboard)
 
 
 @dp.callback_query(lambda c: c.data.startswith("cur_"))
 async def choose_current_group(callback: types.CallbackQuery):
-    _, subject, cur_group = callback.data.split("_")
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=g, callback_data=f"target_{subject}_{cur_group}_{g}")]
-        for g in GROUPS if g != cur_group
-    ])
+    _, subject_index, cur_group = callback.data.split("_")
+    subject_index = int(subject_index)
+    subject = SUBJECTS[subject_index]
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=g, callback_data=f"target_{subject_index}_{cur_group}_{g}")]
+            for g in GROUPS if g != cur_group
+        ]
+    )
     await callback.message.answer(f"اختر الفئة التي تريد الانتقال إليها:", reply_markup=keyboard)
 
 
 @dp.callback_query(lambda c: c.data.startswith("target_"))
 async def choose_target_group(callback: types.CallbackQuery):
-    _, subject, cur_group, target_group = callback.data.split("_")
+    _, subject_index, cur_group, target_group = callback.data.split("_")
+    subject_index = int(subject_index)
+    subject = SUBJECTS[subject_index]
 
     new_req = {
         "user_id": callback.from_user.id,
-        "username": callback.from_user.username,
+        "username": callback.from_user.username or "غير معروف",
         "subject": subject,
         "current_group": cur_group,
         "target_group": target_group
@@ -125,19 +144,23 @@ async def choose_target_group(callback: types.CallbackQuery):
 
 @dp.callback_query(lambda c: c.data == "search_request")
 async def search_request(callback: types.CallbackQuery):
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=g, callback_data=f"search_from_{g}") for g in GROUPS]
-    ])
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=g, callback_data=f"search_from_{g}") for g in GROUPS]
+        ]
+    )
     await callback.message.answer("اختر فئتك الحالية:", reply_markup=keyboard)
 
 
 @dp.callback_query(lambda c: c.data.startswith("search_from_"))
 async def search_from(callback: types.CallbackQuery):
     cur_group = callback.data.split("_")[2]
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=g, callback_data=f"search_to_{cur_group}_{g}")]
-        for g in GROUPS if g != cur_group
-    ])
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=g, callback_data=f"search_to_{cur_group}_{g}")]
+            for g in GROUPS if g != cur_group
+        ]
+    )
     await callback.message.answer("اختر الفئة التي تريد الانتقال إليها:", reply_markup=keyboard)
 
 
