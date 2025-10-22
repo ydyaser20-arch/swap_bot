@@ -146,7 +146,18 @@ async def choose_target_group(callback: types.CallbackQuery):
 async def search_request(callback: types.CallbackQuery):
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text=g, callback_data=f"search_from_{g}") for g in GROUPS]
+            [InlineKeyboardButton(text=s, callback_data=f"search_subject_{i}") for i, s in enumerate(SUBJECTS)]
+        ]
+    )
+    await callback.message.answer("اختر المادة للبحث عنها:", reply_markup=keyboard)
+
+
+@dp.callback_query(lambda c: c.data.startswith("search_subject_"))
+async def search_subject(callback: types.CallbackQuery):
+    subject_index = int(callback.data.split("_")[2])
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=g, callback_data=f"search_from_{subject_index}_{g}") for g in GROUPS]
         ]
     )
     await callback.message.answer("اختر فئتك الحالية:", reply_markup=keyboard)
@@ -154,11 +165,11 @@ async def search_request(callback: types.CallbackQuery):
 
 @dp.callback_query(lambda c: c.data.startswith("search_from_"))
 async def search_from(callback: types.CallbackQuery):
-    cur_group = callback.data.split("_")[2]
+    _, _, subject_index, cur_group = callback.data.split("_")
+    subject_index = int(subject_index)
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text=g, callback_data=f"search_to_{cur_group}_{g}")]
-            for g in GROUPS if g != cur_group
+            [InlineKeyboardButton(text=g, callback_data=f"search_to_{subject_index}_{cur_group}_{g}") for g in GROUPS if g != cur_group]
         ]
     )
     await callback.message.answer("اختر الفئة التي تريد الانتقال إليها:", reply_markup=keyboard)
@@ -166,10 +177,14 @@ async def search_from(callback: types.CallbackQuery):
 
 @dp.callback_query(lambda c: c.data.startswith("search_to_"))
 async def search_to(callback: types.CallbackQuery):
-    _, _, cur_group, target_group = callback.data.split("_")
+    _, _, subject_index, cur_group, target_group = callback.data.split("_")
+    subject_index = int(subject_index)
+    subject = SUBJECTS[subject_index]
+
     data = load_data()
     found = [
-        r for r in data if r["current_group"] == target_group and r["target_group"] == cur_group
+        r for r in data
+        if r["subject"] == subject and r["current_group"] == target_group and r["target_group"] == cur_group
     ]
 
     if not found:
