@@ -1,0 +1,197 @@
+import asyncio
+import json
+from aiogram import Bot, Dispatcher, types
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.filters import Command
+
+TOKEN = "8483277417:AAGbkbkI_u_rBku5cGXyusUR7zPfRjilqGY"
+
+bot = Bot(token=TOKEN)
+dp = Dispatcher()
+
+# المواد والفئات
+SUBJECTS = ["مخبر الدارات المتكاملة", "مخبر نظم الحاسوب (معالجات متطورة)", "مخبر نظم المعلومات (تحليل وتصميم)", "مخبر نظم المعلومات (مترجمات)"]
+GROUPS = ["1", "2", "3", "4", "5", "6"]
+
+DATA_FILE = "requests.json"
+
+
+# ========== وظائف مساعدة ==========
+
+def load_data():
+    try:
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except:
+        return []
+
+def save_data(data):
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def find_match(new_request):
+    data = load_data()
+    for req in data:
+        if (
+            req["subject"] == new_request["subject"]
+            and req["current_group"] == new_request["target_group"]
+            and req["target_group"] == new_request["current_group"]
+        ):
+            return req
+    return None
+
+
+# ========== البداية ==========
+
+@dp.message(Command("start"))
+async def start_cmd(msg: types.Message):
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📝 تقديم طلب تبادل", callback_data="add_request")],
+        [InlineKeyboardButton(text="🔍 البحث عن طلب", callback_data="search_request")],
+        [InlineKeyboardButton(text="📋 عرض الطلبات المفتوحة", callback_data="show_all")],
+        [InlineKeyboardButton(text="❌ حذف طلبي", callback_data="delete_request")],
+    ])
+    await msg.answer(
+        "مرحبًا بك في بوت تبادل الفئات 👋\nاختر أحد الخيارات:",
+        reply_markup=keyboard
+    )
+
+
+# ========== تقديم طلب جديد ==========
+
+@dp.callback_query(lambda c: c.data == "add_request")
+async def add_request(callback: types.CallbackQuery):
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=s, callback_data=f"subject_{s}") for s in SUBJECTS]
+    ])
+    await callback.message.answer("اختر المادة:", reply_markup=keyboard)
+
+
+@dp.callback_query(lambda c: c.data.startswith("subject_"))
+async def choose_subject(callback: types.CallbackQuery):
+    subject = callback.data.split("_")[1]
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=g, callback_data=f"cur_{subject}_{g}") for g in GROUPS]
+    ])
+    await callback.message.answer(f"اختر فئتك الحالية لمادة {subject}:", reply_markup=keyboard)
+
+
+@dp.callback_query(lambda c: c.data.startswith("cur_"))
+async def choose_current_group(callback: types.CallbackQuery):
+    _, subject, cur_group = callback.data.split("_")
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=g, callback_data=f"target_{subject}_{cur_group}_{g}")]
+        for g in GROUPS if g != cur_group
+    ])
+    await callback.message.answer(f"اختر الفئة التي تريد الانتقال إليها:", reply_markup=keyboard)
+
+
+@dp.callback_query(lambda c: c.data.startswith("target_"))
+async def choose_target_group(callback: types.CallbackQuery):
+    _, subject, cur_group, target_group = callback.data.split("_")
+
+    new_req = {
+        "user_id": callback.from_user.id,
+        "username": callback.from_user.username,
+        "subject": subject,
+        "current_group": cur_group,
+        "target_group": target_group
+    }
+
+    data = load_data()
+    # حذف الطلب القديم إذا موجود
+    data = [r for r in data if r["user_id"] != callback.from_user.id]
+    data.append(new_req)
+    save_data(data)
+
+    match = find_match(new_req)
+    if match:
+        await bot.send_message(
+            match["user_id"],
+            f"✅ تم العثور على طالب يريد التبادل معك!\n"
+            f"المادة: {subject}\n"
+            f"هو من الفئة {cur_group} ويريد الانتقال إلى {target_group}."
+        )
+        await callback.message.answer(
+            f"✅ تم العثور على تطابق!\nالطالب الآخر: @{match['username']}\n"
+            f"من {match['current_group']} إلى {match['target_group']} لمادة {subject}"
+        )
+    else:
+        await callback.message.answer("تم تسجيل طلبك بنجاح ✅\nسيتم إعلامك في حال وجود تطابق.")
+
+
+# ========== البحث عن طلبات ==========
+
+@dp.callback_query(lambda c: c.data == "search_request")
+async def search_request(callback: types.CallbackQuery):
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=g, callback_data=f"search_from_{g}") for g in GROUPS]
+    ])
+    await callback.message.answer("اختر فئتك الحالية:", reply_markup=keyboard)
+
+
+@dp.callback_query(lambda c: c.data.startswith("search_from_"))
+async def search_from(callback: types.CallbackQuery):
+    cur_group = callback.data.split("_")[2]
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=g, callback_data=f"search_to_{cur_group}_{g}")]
+        for g in GROUPS if g != cur_group
+    ])
+    await callback.message.answer("اختر الفئة التي تريد الانتقال إليها:", reply_markup=keyboard)
+
+
+@dp.callback_query(lambda c: c.data.startswith("search_to_"))
+async def search_to(callback: types.CallbackQuery):
+    _, _, cur_group, target_group = callback.data.split("_")
+    data = load_data()
+    found = [
+        r for r in data if r["current_group"] == target_group and r["target_group"] == cur_group
+    ]
+
+    if not found:
+        await callback.message.answer("❌ لا يوجد طلاب حاليًا يريدون التبادل معك.")
+    else:
+        msg = "الطلاب المتاحون للتبادل:\n\n"
+        for r in found:
+            msg += f"👤 @{r['username']} | مادة: {r['subject']} | من {r['current_group']} إلى {r['target_group']}\n"
+        await callback.message.answer(msg)
+
+
+# ========== عرض الطلبات المفتوحة ==========
+
+@dp.callback_query(lambda c: c.data == "show_all")
+async def show_all(callback: types.CallbackQuery):
+    data = load_data()
+    if not data:
+        await callback.message.answer("لا توجد طلبات حالياً.")
+        return
+
+    msg = "📋 الطلبات المفتوحة:\n\n"
+    for r in data:
+        msg += f"👤 @{r['username']} | {r['subject']} | من {r['current_group']} → {r['target_group']}\n"
+    await callback.message.answer(msg)
+
+
+# ========== حذف الطلب الشخصي ==========
+
+@dp.callback_query(lambda c: c.data == "delete_request")
+async def delete_request(callback: types.CallbackQuery):
+    data = load_data()
+    before = len(data)
+    data = [r for r in data if r["user_id"] != callback.from_user.id]
+    save_data(data)
+    if len(data) < before:
+        await callback.message.answer("✅ تم حذف طلبك بنجاح.")
+    else:
+        await callback.message.answer("⚠️ لا يوجد لديك طلب مسجل.")
+
+
+# ========== تشغيل البوت ==========
+
+async def main():
+    print("🤖 البوت يعمل الآن...")
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
